@@ -1,0 +1,134 @@
+<html>
+<head>
+  <script src="tints.js"></script>
+  <style>
+    #relief{ -webkit-filter: blur(0.5px); filter: blur(0.5px); }
+  </style>
+</head>
+<body>
+<script>
+
+// remap luminance values from 0-1 to .2-1, then the sqrt of that. image tends to look too shadowy otherwise
+var brighten = function(n){ return Math.sqrt(n*.8 + .2); };
+
+// blue for ocean color
+var blue = {r: 140, g: 177, b: 228};
+
+var sunElev = Math.PI*.25;
+var sunAzimuth = 1.75*Math.PI;
+
+var reliefCanvas = document.createElement('canvas');
+reliefCanvas.id='relief';
+document.body.appendChild(reliefCanvas);
+var reliefContext;
+var reliefImageData;
+var reliefData;
+
+var demCanvas = document.createElement('canvas');
+var demContext;
+var demImageData;
+var demData;
+
+var width;
+var height;
+
+var img = new Image();
+img.onload = function(){
+  width = img.width;
+  height = img.height;
+
+  reliefCanvas.width = width;
+  reliefCanvas.height = height;
+
+  demCanvas.width = width;
+  demCanvas.height = height;
+
+  reliefContext = reliefCanvas.getContext('2d');
+  reliefImageData = reliefContext.getImageData(0,0,width,height);
+  reliefData = reliefImageData.data;
+
+  demContext = demCanvas.getContext('2d');
+  demContext.drawImage(img,0,0,width,height);
+  demImageData = demContext.getImageData(0,0,width,height);
+  demData = demImageData.data;
+
+  drawRelief();
+}
+img.src = 'molokai.png';
+
+function drawRelief(){
+  
+  for ( var n=0; n<demData.length; n+=4) {
+    // in the Molokai image, value 0 is ocean
+    if (demData[n] < 1) {
+      reliefData[n] = blue.r;
+      reliefData[n+1] = blue.g;
+      reliefData[n+2] = blue.b;
+      reliefData[n+3] = 255;
+      continue;
+    }
+
+    // x/y coordinates from imageData index
+    var x = (n / 4) % width;
+    var y = Math.floor((n / 4) / width);
+    
+    // image data index for surrounding pixels
+    var top = getIndexForCoordinates(x,Math.max(0,y-1))
+    var left = getIndexForCoordinates(Math.max(0,x-1),y);
+    var right = getIndexForCoordinates(Math.min(width-1,x+1),y);
+    var bottom = getIndexForCoordinates(x,Math.min(height,y+1))
+    
+    // get slope values
+    var topValue = demData[top];
+    var leftValue = demData[left];
+    var rightValue = demData[right];
+    var bottomValue = demData[bottom];
+
+    var slx = (rightValue - leftValue)/3;
+    var sly = ( bottomValue - topValue )/3;
+    var sl0 = Math.sqrt( slx*slx + sly*sly );
+    
+    // get aspect
+    var phi = Math.acos( slx/sl0 );
+    if ( sl0 == 0 ) {
+      phi = 0;
+    }
+    var azimuth = 0;
+    if ( slx > 0 ) {
+      if ( sly > 0 ) azimuth = phi + 1.5*Math.PI;
+      else if ( sly < 0 ) azimuth = 1.5*Math.PI - phi;
+      else phi = 1.5*Math.PI;
+    } else if ( slx < 0 ){
+      if ( sly < 0 ) azimuth = phi + .5*Math.PI;
+      else if ( sly > 0 ) azimuth = .5*Math.PI - phi;
+      else azimuth = .5*Math.PI;
+    } else {
+      if ( sly < 0 ) azimuth = Math.PI;
+      else if ( sly > 0 ) azimuth = 0;
+    }
+    
+    // get luminance
+    var L = Math.cos( azimuth - sunAzimuth )*Math.cos( Math.PI*.5 - Math.atan(sl0) )*Math.cos( sunElev ) +  Math.sin( Math.PI*.5 - Math.atan(sl0) )*Math.sin( sunElev );
+    
+    if (L<0) L = 0;
+   
+    L = brighten(L);
+
+    var color = tints[demData[n]];  // hypsometric tint color - see tints.js
+    // some kind of multiply blend
+    reliefData[n] = parseInt( L * color.r);
+    reliefData[n+1] = parseInt( L * color.g);
+    reliefData[n+2] = parseInt( L * color.b);
+    reliefData[n+3] = 255;
+  }
+  reliefContext.putImageData(reliefImageData,0,0);
+}
+
+// index in imageData array for x/y coordinate
+function getIndexForCoordinates(x,y) {
+  return width * y * 4 + 4 * x;
+}
+
+</script>
+</body>
+</html>
